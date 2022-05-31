@@ -75,7 +75,10 @@ init(Ctx0) ->
           omit_standard_statuses,
           methods,
           path_filter,
-          rfc7951
+          rfc7951,
+          auth_type,
+          oauth2_flow,
+          oauth2_tokenurl
          }).
 
 option_specs() ->
@@ -180,8 +183,23 @@ option_specs() ->
        %% --swagger-rfc7951 <boolean>
        {rfc7951, undefined, "swagger-rfc7951",
         {boolean, false},
-        "Format 64-bit integer types as JSON strings"}
+        "Format 64-bit integer types as JSON strings"},
 
+       %% --swagger-auth-type <type>
+       {auth_type, undefined, "swagger-auth-type",
+        {atom, basic},
+        "Specify the HTTP authentication type.  "
+        "Valid values are: basic, oauth2"},
+
+       %% --swagger-oauth2-flow <name>
+       {oauth2_flow, undefined, "swagger-oauth2-flow",
+        {atom, application},
+        "Specify the Swagger authentication flow name.  "
+        "Valid values are: application, password"},
+
+       %% --swagger-oauth2-tokenurl <url>
+       {oauth2_tokenurl, undefined, "swagger-oauth2-tokenurl", {string, ""},
+        "The URL to which unauthenticated clients should be redirected"}
       ]
      }].
 
@@ -220,6 +238,9 @@ mk_options(Ctx) ->
                 proplists:get_value(methods, Ctx#yctx.options)),
     PathFilter = proplists:get_value(path_filter, Ctx#yctx.options),
     RFC7951 = proplists:get_value(rfc7951, Ctx#yctx.options),
+    AuthType = proplists:get_value(auth_type, Ctx#yctx.options),
+    Oauth2FlowName = proplists:get_value(oauth2_flow, Ctx#yctx.options),
+    Oauth2TokenUrl = proplists:get_value(oauth2_tokenurl, Ctx#yctx.options),
     #options{host                   = Host,
              path                   = Path,
              version                = Version,
@@ -239,7 +260,10 @@ mk_options(Ctx) ->
              omit_standard_statuses = OmitStatuses,
              methods                = Methods,
              path_filter            = PathFilter,
-             rfc7951                = RFC7951}.
+             rfc7951                = RFC7951,
+             auth_type              = AuthType,
+             oauth2_flow       = Oauth2FlowName,
+             oauth2_tokenurl       = Oauth2TokenUrl}.
 
 
 %% parse a comma separated HTTP method string, eg: "post, get"
@@ -460,7 +484,7 @@ emit_tree(Ctx, [Mod|Mods], AllMods, Fd, Opts) ->
             io:format(Fd, ",\n", []),
 
             %% security definitions
-            print_security_definitions(Fd),
+            print_security_definitions(Fd, Opts),
             io:format(Fd, ",\n", []),
 
             %% definitions
@@ -538,19 +562,39 @@ print_definitions(Fd, Opts) ->
     io:format(Fd, "\n~s}", [Indent2]).
 
 
-print_security_definitions(Fd) ->
-    Lvl = 1,
-    Indent2 = indent(Lvl),
+%% This flow name is called clientCredentials in OAS3
+oauth2_flow(application = _FlowName) ->
+  "application";
+oauth2_flow(password = _FlowName) ->
+  "password".
+
+secdefs(#options{auth_type = oauth2} = Opts, Lvl) ->
     Indent4 = indent(Lvl + 1),
     Indent6 = indent(Lvl + 2),
-    SecDefs =
-        [
-         [
-          Indent4, "\"basicAuth\": {\n",
-          Indent6, "\"type\": \"basic\"\n",
-          Indent4, "}"
-         ]
-        ],
+    [
+     [Indent4, "\"oauth2\": {\n",
+      Indent6, "\"type\": \"oauth2\",\n",
+      Indent6, "\"flow\": \"", oauth2_flow(Opts#options.oauth2_flow), "\",\n",
+      Indent6, "\"tokenUrl\": \"", Opts#options.oauth2_tokenurl, "\"\n",
+      Indent4, "}\n"
+     ]
+    ];
+
+secdefs(_Opts, Lvl) ->
+    Indent4 = indent(Lvl + 1),
+    Indent6 = indent(Lvl + 2),
+    [
+     [
+      Indent4, "\"basicAuth\": {\n",
+      Indent6, "\"type\": \"basic\"\n",
+      Indent4, "}"
+     ]
+    ].
+
+print_security_definitions(Fd, Opts) ->
+    Lvl = 1,
+    Indent2 = indent(Lvl),
+    SecDefs = secdefs(Opts, Lvl),
     io:format(Fd, "~s\"securityDefinitions\": {\n", [Indent2]),
     io:format(Fd, "~s", [lists:join($, , SecDefs)]),
     io:format(Fd, "\n~s}", [Indent2]).
@@ -1093,7 +1137,7 @@ methods(HttpMethods, Summary, Description,
                     HeaderParams ++ FormParams,
                 Responses = responses(HttpMethod, Path, PathType,
                                       Mode, Opts, Sn, Mod, Lvl + 2),
-                Security = security(HttpMethod, PathType, Mode, Sn, Lvl + 2),
+                Security = security(HttpMethod, PathType, Mode, Sn, Opts, Lvl + 2),
                 Tags = case Opts#options.tag_mode of
                            methods   -> [tag(Lvl + 2, HttpMethod)];
                            resources -> [tag(Lvl + 2, Mode)];
@@ -1122,9 +1166,15 @@ methods(HttpMethods, Summary, Description,
         end,
     [F(M) || M <- HttpMethods].
 
-
 %% FIXME: more security options/support needed?
-security(_HttpMethod, _PathType, _Mode, _Sn, Lvl) ->
+security(_HttpMethod, _PathType, _Mode, _Sn, #options{auth_type = oauth2} = _Opts, Lvl) ->
+    Indent2 = indent(Lvl),
+    Indent4 = indent(Lvl + 1),
+    [
+     [Indent2, "{\n", Indent4, "\"oauth2\": []\n", Indent2, "}\n"]
+    ];
+
+security(_HttpMethod, _PathType, _Mode, _Sn, _Opts, Lvl) ->
     Indent2 = indent(Lvl),
     Indent4 = indent(Lvl + 1),
     [
