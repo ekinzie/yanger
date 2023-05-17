@@ -1569,6 +1569,7 @@ type_and_format(#type{base = Base}, RFC7951) ->
             case Base of
                 int64 -> 'int64-rfc7951';
                 uint64 -> 'uint64-rfc7951';
+                decimal64 -> 'decimal64-rfc7951';
                 _ -> Base
             end;
         false -> Base
@@ -1589,6 +1590,7 @@ type_and_format(enumeration) ->            {string, enumeration};
 type_and_format(empty) ->                  {string, '[null]'};
 type_and_format(binary) ->                 {string, binary};
 type_and_format(decimal64) ->              {number, double};
+type_and_format('decimal64-rfc7951') ->    {string, string};
 type_and_format(uint8) ->                  {integer, byte};
 type_and_format(uint16) ->                 {integer, uint16};
 type_and_format(uint32) ->                 {integer, uint32};
