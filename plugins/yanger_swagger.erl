@@ -1569,6 +1569,8 @@ type_and_format(Type, true) ->
             {string, int64};
         {integer, uint64} ->
             {string, uint64};
+        {number, double} ->
+            {string, string};
         Else ->
             Else
     end.
