@@ -299,7 +299,8 @@ has_data_sns(Ctx, Mod) ->
 
 -type io_device() :: pid() | integer().
 -spec emit(#yctx{}, [#module{}], io_device()) -> [#yerror{}].
-emit(Ctx, Mods, Fd) ->
+emit(Ctx, Mods0, Fd) ->
+    Mods = [mod_resolve_leafref_type(Ctx, M) || M <- Mods0],
     DataSnsMods = [M || M <- Mods, has_data_sns(Ctx, M)],
 
     %% Verify that we are only supplied with one data module.
@@ -2308,3 +2309,37 @@ replace_patterns() ->
 
 
 indent(Lvl) when is_integer(Lvl), Lvl > 0  -> lists:duplicate(Lvl * 2, $\s).
+
+%% @doc Recurse through the entire module and, for each leafref, resolve
+%% the type of each referenced schema node.
+%% Returns a module with the leafref nodes replaced.
+mod_resolve_leafref_type(Ctx, Mod) ->
+    Chs = Mod#module.children,
+    Mod#module{children = mod_resolve_leafref_type_children(Ctx, Chs, [])}.
+
+%% @doc Replace each leafref child with a new child with a "resolved" type.
+%% Returns a new list of children.
+mod_resolve_leafref_type_children(Ctx, Chs, Ancestors) ->
+    [mod_resolve_leafref_type_one(Ctx, Child, Ancestors) || Child <- Chs].
+
+%% If the current leaf is a leafref, resolve.  If the current leaf has
+%% children, recurse.  Otherwise return the leaf unmodified.
+mod_resolve_leafref_type_one(Ctx,
+                             #sn{kind = 'leaf',
+                                 type = #type{base = 'leafref'}} = Child,
+                             Ancestors) ->
+    T = Child#sn.type,
+    LeafrefPath = T#type.type_spec#leafref_type_spec.path,
+    M = Child#sn.module,
+    Cursor = yang:mk_cursor(Child, Ancestors, T#type.stmt, M, schema, Ctx),
+    {Success, TargetSn} = yang_types:follow_leafref_path(LeafrefPath, Cursor, Ctx),
+    ActualType = if Success =:= true ->
+        TargetSn#cursor.cur#sn.type;
+      true ->
+        T
+    end,
+    Child#sn{type = ActualType};
+
+mod_resolve_leafref_type_one(Ctx, Child, Ancestors) ->
+    Chs = Child#sn.children,
+    Child#sn{children = mod_resolve_leafref_type_children(Ctx, Chs, [Child] ++ Ancestors)}.
