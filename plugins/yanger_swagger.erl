@@ -1542,17 +1542,11 @@ fmt_format(Lvl, Format) when is_atom(Format) ->
 fmt_format(Lvl, {enumeration = Format, Enums}) ->
     Indent2 = indent(Lvl),
     Indent4 = indent(Lvl + 1),
-    DefaultStr =
-        case Enums of
-            [] -> [];
-            [{Enum, _} | _] -> [Indent2, "\"default\": \"", Enum, "\",\n"]
-        end,
     EnumsStr =
         lists:join(
           $, , [["\n", Indent4, "\"", E, "\""] ||
                   {E,_V} <- lists:keysort(2, Enums)]),
     [Indent2, "\"format\": \"", ?a2l(Format), "\",\n",
-     DefaultStr,
      Indent2, "\"enum\": [", EnumsStr, "\n", Indent2, "]"];
 fmt_format(_Lvl, _Format) ->
     [].
