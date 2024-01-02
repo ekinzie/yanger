@@ -2339,7 +2339,7 @@ mod_resolve_leafref_type_one(Ctx,
       true ->
         T
     end,
-    Child#sn{type = ActualType};
+    Child#sn{type = ActualType, default = undefined};
 
 mod_resolve_leafref_type_one(Ctx, Child, Ancestors) ->
     Chs = Child#sn.children,
