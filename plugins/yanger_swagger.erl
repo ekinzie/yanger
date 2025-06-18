@@ -1189,8 +1189,6 @@ responses(post = HttpMethod, Path, PathType, Mode, Opts,
           #sn{kind = operation,
               stmt = {_, _, _, StmtL},
               children = Chs} = Sn, Mod, Lvl) ->
-    Indent2 = indent(Lvl),
-    Indent4 = indent(Lvl + 1),
     DefLvl = 2,
     DIndent2 = indent(DefLvl),
     DIndent4 = indent(DefLvl + 1),
@@ -1203,12 +1201,12 @@ responses(post = HttpMethod, Path, PathType, Mode, Opts,
                         description(OutStmtL)
                 end,
     HttpStatus = http_status(HttpMethod, PathType, Sn),
-    OutDesc = case OutDesc0 of
+    OutDescs = [case OutDesc0 of
                   [] ->
-                      description(HttpStatus);
+                      description(Status);
                   _ ->
                       OutDesc0
-              end,
+              end || Status <- HttpStatus],
 
     ParamName = ref_name([Path, $-, ?a2l('post-output')]),
     BodyDefinition =
@@ -1224,17 +1222,8 @@ responses(post = HttpMethod, Path, PathType, Mode, Opts,
         ],
     store_defs(?SWAGGER_DEFS, [{ParamName, Path, BodyDefinition}]),
 
-    [
-     [
-      "\n",
-      Indent2, "\"", HttpStatus, "\": {\n",
-      Indent4, "\"description\": \"", OutDesc, "\",\n",
-      Indent4, "\"schema\": {",
-      fmt_ref(Lvl + 2, definitions, ParamName), "\n",
-      Indent4, "}\n",
-      Indent2, "}"
-     ]
-    ] ++ if Opts#options.omit_standard_statuses ->
+     [fmt_status(Lvl, Status, OutDesc, ParamName) || {Status, OutDesc} <- lists:zip(HttpStatus, OutDescs)]
+     ++ if Opts#options.omit_standard_statuses ->
                  [];
             true ->
                  fmt_refs(Lvl,
@@ -1244,8 +1233,6 @@ responses(HttpMethod, _Path, PathType, _Mode, Opts,
           #sn{name = Name, kind = Kind, stmt = {_, _, _, _StmtL}} = Sn,
           _Mod, Lvl)
   when HttpMethod == post; HttpMethod == patch; HttpMethod == put ->
-    Indent2 = indent(Lvl),
-    Indent4 = indent(Lvl + 1),
     {DescEffect, StdErrors}
         = case HttpMethod of
               post ->  {"created", ["204" | standard_error_statuses()]};
@@ -1255,11 +1242,8 @@ responses(HttpMethod, _Path, PathType, _Mode, Opts,
           end,
     [
      [
-      "\n",
-      Indent2, "\"", http_status(HttpMethod, PathType, Sn), "\": {\n",
-      Indent4, "\"description\": \"", ?a2l(Kind), " ", fmt_node_name(Name), " ",
-      DescEffect, "\"\n",
-      Indent2, "}"
+      fmt_status_sn(Lvl, Status, Name, Kind, DescEffect)
+      || Status <- http_status(HttpMethod, PathType, Sn)
      ]
     ] ++ if Opts#options.omit_standard_statuses ->
                  [];
@@ -1272,20 +1256,18 @@ responses(get = HttpMethod, Path, PathType, Mode, Opts, SnOrMod, Mod, Lvl) ->
                 #module{stmt = {_, _, _, StmtList}} -> StmtList
             end,
     %% FIXME: make method specific descriptions?
-    Indent2 = indent(Lvl),
-    Indent4 = indent(Lvl + 1),
     DefLvl = 2,
     DIndent2 = indent(DefLvl),
     DIndent4 = indent(DefLvl + 1),
     Body = body(json, _IsTop = true, response, HttpMethod, PathType,
                 Mode, SnOrMod, Mod, DefLvl + 2, Opts),
     HttpStatus = http_status(HttpMethod, PathType, SnOrMod),
-    Desc = case description(StmtL) of
+    Descs = [case description(StmtL) of
                [] ->
-                   description(HttpStatus);
+                   description(Status);
                D ->
                    D
-           end,
+           end || Status <- HttpStatus],
 
     ParamName = ref_name(Path),
     BodyDefinition =
@@ -1301,49 +1283,32 @@ responses(get = HttpMethod, Path, PathType, Mode, Opts, SnOrMod, Mod, Lvl) ->
         ],
     store_defs(?SWAGGER_DEFS, [{ParamName, Path, BodyDefinition}]),
 
-    [
-     [
-      "\n",
-      Indent2, "\"", HttpStatus, "\": {\n",
-      Indent4, "\"description\": \"", Desc, "\",\n",
-      Indent4, "\"schema\": {",
-      fmt_ref(Lvl + 2, definitions, ParamName), "\n",
-      Indent4, "}\n",
-      Indent2, "}"
-     ]
-    ] ++ if Opts#options.omit_standard_statuses ->
+     [fmt_status(Lvl, Status, Desc, ParamName) || {Status, Desc} <- lists:zip(HttpStatus, Descs)]
+      ++ if Opts#options.omit_standard_statuses ->
                  [];
             true ->
                  fmt_refs(Lvl,
                           responses, ["204" | standard_error_statuses()])
          end;
 responses(delete, _Path, PathType, _Mode, _Opts, SnOrMod, _Mod, Lvl) ->
-    fmt_refs(Lvl, responses, [http_status(delete, PathType, SnOrMod)]);
+    fmt_refs(Lvl, responses, http_status(delete, PathType, SnOrMod));
 responses(HttpMethod, _Path, PathType, _Mode, _Opts, SnOrMod, _Mod, Lvl)
   when HttpMethod == options; HttpMethod == head ->
-    fmt_refs(Lvl, responses, [http_status(HttpMethod, PathType, SnOrMod)]);
+    fmt_refs(Lvl, responses, http_status(HttpMethod, PathType, SnOrMod));
 responses(HttpMethod, _Path, PathType, _Mode, Opts, SnOrMod, _Mod, Lvl) ->
-    Indent2 = indent(Lvl),
-    Indent4 = indent(Lvl + 1),
     StmtL = case SnOrMod of
                 #sn{stmt = {_, _, _, StmtList}} -> StmtList;
                 #module{stmt = {_, _, _, StmtList}} -> StmtList
             end,
     HttpStatus = http_status(HttpMethod, PathType, SnOrMod),
-    Desc = case description(StmtL) of
+    Descs = [case description(StmtL) of
                [] ->
-                   description(HttpStatus);
+                   description(Status);
                D ->
                    D
-           end,
-    [
-     [
-      "\n",
-      Indent2, "\"", HttpStatus, "\": {\n",
-      Indent4, "\"description\": \"", Desc, "\"\n",
-      Indent2, "}"
-     ]
-    ] ++ if Opts#options.omit_standard_statuses ->
+           end || Status <- HttpStatus],
+     [fmt_status(Lvl, Status, Desc) || {Status, Desc} <- lists:zip(HttpStatus, Descs)]
+      ++ if Opts#options.omit_standard_statuses ->
                  [];
             true ->
                  fmt_standard_error_refs(Lvl)
@@ -1453,13 +1418,13 @@ to_string(Name) ->
     end.
 
 
-http_status(get, _PathType, _Sn)              -> "200";
-http_status(post, _PathType, _Sn)             -> "201";
-http_status(put, _PathType, _Sn)              -> "201";
-http_status(patch, _PathType, _Sn)            -> "204";
-http_status(delete, _PathType, _Sn)           -> "204";
-http_status(options, _PathType, _Sn)          -> "200";
-http_status(head, _PathType, _Sn)             -> "200".
+http_status(get, _PathType, _Sn)              -> ["200"];
+http_status(post, _PathType, _Sn)             -> ["200", "201"];
+http_status(put, _PathType, _Sn)              -> ["201"];
+http_status(patch, _PathType, _Sn)            -> ["204"];
+http_status(delete, _PathType, _Sn)           -> ["204"];
+http_status(options, _PathType, _Sn)          -> ["200"];
+http_status(head, _PathType, _Sn)             -> ["200"].
 
 
 standard_success_statuses() -> ["200", "201", "204"].
@@ -1483,6 +1448,39 @@ fmt_status(Lvl, Status) ->
      Indent4, "\"description\": \"", description(Status), "\"\n",
      Indent2, "}"
     ].
+fmt_status(Lvl, Status, Desc) ->
+    Indent2 = indent(Lvl),
+    Indent4 = indent(Lvl + 1),
+    [
+     "\n",
+     Indent2, "\"", Status, "\": {\n",
+     Indent4, "\"description\": \"", Desc, "\"\n",
+     Indent2, "}"
+    ].
+fmt_status(Lvl, Status, OutDesc, ParamName) ->
+    Indent2 = indent(Lvl),
+    Indent4 = indent(Lvl + 1),
+     [
+      "\n",
+      Indent2, "\"", Status, "\": {\n",
+      Indent4, "\"description\": \"", OutDesc, "\",\n",
+      Indent4, "\"schema\": {",
+      fmt_ref(Lvl + 2, definitions, ParamName), "\n",
+      Indent4, "}\n",
+      Indent2, "}"
+     ].
+
+fmt_status_sn(Lvl, Status, Name, Kind, DescEffect) ->
+    Indent2 = indent(Lvl),
+    Indent4 = indent(Lvl + 1),
+    [
+      "\n",
+      Indent2, "\"", Status, "\": {\n",
+      Indent4, "\"description\": \"", ?a2l(Kind), " ", fmt_node_name(Name), " ",
+      DescEffect, "\"\n",
+      Indent2, "}"
+    ].
+
 
 description("200") -> "OK";
 description("201") -> "Created";
